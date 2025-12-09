@@ -1,24 +1,41 @@
 #!/bin/bash
 
-# -----------------------------
-# CONFIG
-# -----------------------------
+# Configuration
 URL="https://coinmarketcap.com/currencies/bitcoin/"
 DB_USER="root"
-DB_PASS=""   # leave empty if XAMPP root has no password
+DB_PASS=""   #empty as XAMPP has no password
 DB_NAME="crypto_db"
 ASSET_ID=1
 HTML_FILE="btc.html"
 
-# -----------------------------
-# DOWNLOAD PAGE
-# -----------------------------
-curl -s "$URL" > "$HTML_FILE"
+
+# Downloading Page
+MAX_RETRIES=3
+count=0
+# Loop for trying trying multiple times if the page couldnt be downloaded
+while [ $count -lt $MAX_RETRIES ]; 
+do
+    curl -s "$URL" -o "$HTML_FILE"
+    if [ $? -eq 0 ] && [ -s "$HTML_FILE" ]; 
+    then
+        break
+    fi
+    echo "Download failed. Retrying... ($((count+1))/$MAX_RETRIES)"
+    sleep 5
+    ((count++))
+done
+
+# Even if after 3 tries the page couldnt be downloaded then prints error message and exits
+if [ $count -eq $MAX_RETRIES ]; 
+then
+    echo "Error: Failed to download page after $MAX_RETRIES attempts."
+    exit 1
+fi
+
 echo "Downloaded page to $HTML_FILE"
 
-# -----------------------------
-# PARSE DATA
-# -----------------------------
+
+# Parsing relevent data
 # Price
 price=$(grep -oE 'Bitcoin price today</strong> is \$[0-9,]+\.[0-9]+' "$HTML_FILE" | head -1 | grep -oE '[0-9,]+\.[0-9]+' | tr -d ',[:space:]')
 
@@ -37,18 +54,18 @@ max_supply=$(grep -oE 'max. supply of [0-9,]+' "$HTML_FILE" | head -1 | grep -oE
 # Circulating Supply
 circ_supply=$(grep -oE 'circulating supply of [0-9,]+' "$HTML_FILE" | head -1 | grep -oE '[0-9,]+' | tr -d ',[:space:]')
 
-# -----------------------------
-# CALCULATIONS
-# -----------------------------
-# FDV
+
+# CHeck if the parsed data is correct
+if [ -z "$price" ] || [ -z "$market_cap" ] || [ -z "$volume_24h" ]; then
+    echo "Error: Failed to parse required data. Website structure may have changed or blocked scraping."
+    exit 1
+fi
+
+# Calcualting fdv(fully diluted value) and volume:market cap. fdv = price x max supply. volume:market cap = volume 24h / market cap
 fdv=$(echo "$price * $max_supply" | bc)
+vol_to_mkt_cap=$(echo "scale=6; ($volume_24h / $market_cap) * 100" | bc)
 
-# Vol/Mkt Cap %
-vol_to_mkt_cap=$(echo "scale=2; ($volume_24h / $market_cap) * 100" | bc)
-
-# -----------------------------
-# OUTPUT
-# -----------------------------
+# Display Scraped Data
 echo "Price: $price"
 echo "Change %: $change"
 echo "Market Cap: $market_cap"
@@ -57,13 +74,17 @@ echo "FDV: $fdv"
 echo "Vol/Mkt Cap (%): $vol_to_mkt_cap"
 echo "Circulating Supply: $circ_supply"
 
-# -----------------------------
-# INSERT INTO MYSQL
-# -----------------------------
+# Insert data into sql
 mysql -h 127.0.0.1 -P 3306 -u $DB_USER $DB_NAME <<EOF
 INSERT INTO asset_metrics
 (asset_id, timestamp, price, percent_change_24h, market_cap, volume_24h, fdv, vol_to_mkt_cap, circulating_supply)
 VALUES ($ASSET_ID, NOW(), $price, $change, $market_cap, $volume_24h, $fdv, $vol_to_mkt_cap, $circ_supply);
 EOF
+
+# If data couldnt be inserted then exits and prints error message
+if [ $? -ne 0 ]; then
+    echo "Error: Failed to insert data into MySQL."
+    exit 1
+fi
 
 echo "Data inserted successfully!"

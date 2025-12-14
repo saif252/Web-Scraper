@@ -40,16 +40,23 @@ echo "Downloaded page to $HTML_FILE"
 price=$(grep -oE 'Bitcoin price today</strong> is \$[0-9,]+\.[0-9]+' "$HTML_FILE" | head -1 | grep -oE '[0-9,]+\.[0-9]+' | tr -d ',[:space:]')
 
 # 24h Change %
-change=$(grep -oE 'Bitcoin is (up|down) [0-9.]+%' "$HTML_FILE" | head -1 | grep -oE '[0-9.]+' | tr -d ',[:space:]')
+raw=$(grep -oE 'Bitcoin is (up|down) [0-9.]+%' "$HTML_FILE" | head -1)
+
+direction=$(echo "$raw" | grep -oE 'up|down')
+value=$(echo "$raw" | grep -oE '[0-9.]+' | tr -d ',[:space:]')
+
+if [[ "$direction" == "down" ]]; then
+    change="-$value"
+else
+    change="$value"
+fi
+
 
 # Market Cap
 market_cap=$(grep -oE 'live market cap of \$[0-9,]+' "$HTML_FILE" | head -1 | grep -oE '[0-9,]+' | tr -d ',[:space:]')
 
 # Volume (24h)
 volume_24h=$(grep '<meta property="og:description"' "$HTML_FILE" | head -1 | sed -E 's/.*24-hour trading volume of \$([0-9,]+)\..*/\1/' | tr -d ',')
-
-# Max Supply
-max_supply=$(grep -oE 'max. supply of [0-9,]+' "$HTML_FILE" | head -1 | grep -oE '[0-9,]+' | tr -d ',[:space:]')
 
 # Circulating Supply
 circ_supply=$(grep -oE 'circulating supply of [0-9,]+' "$HTML_FILE" | head -1 | grep -oE '[0-9,]+' | tr -d ',[:space:]')
@@ -61,31 +68,24 @@ if [ -z "$price" ] || [ -z "$market_cap" ] || [ -z "$volume_24h" ]; then
     exit 1
 fi
 
-# Calcualting fdv(fully diluted value) and volume:market cap. fdv = price x max supply. volume:market cap = volume 24h / market cap
-fdv=$(echo "$price * $max_supply" | bc)
-vol_to_mkt_cap=$(echo "scale=6; ($volume_24h / $market_cap) * 100" | bc)
 
 # Display Scraped Data
 echo "Price: $price"
 echo "Change %: $change"
 echo "Market Cap: $market_cap"
 echo "Volume (24h): $volume_24h"
-echo "FDV: $fdv"
-echo "Vol/Mkt Cap (%): $vol_to_mkt_cap"
 echo "Circulating Supply: $circ_supply"
 
 # Insert data into sql
-/Applications/XAMPP/xamppfiles/bin/mysql -h 127.0.0.1 -P 3306 -u $DB_USER $DB_NAME <<EOF
+mysql -h 127.0.0.1 -P 3306 -u $DB_USER $DB_NAME <<EOF
 INSERT INTO asset_metrics
-(asset_id, timestamp, price, percent_change_24h, market_cap, volume_24h, fdv, vol_to_mkt_cap, circulating_supply)
-VALUES ($ASSET_ID, NOW(), $price, $change, $market_cap, $volume_24h, $fdv, $vol_to_mkt_cap, $circ_supply);
+(asset_id, timestamp, price, percent_change_24h, market_cap, volume_24h, circulating_supply)
+VALUES ($ASSET_ID, NOW(), $price, $change, $market_cap, $volume_24h, $circ_supply);
 EOF
 
 
-# If data couldnt be inserted then exits and prints error message
+# data couldnt be inserted then exits and prints error message
 if [ $? -ne 0 ]; then
     echo "Error: Failed to insert data into MySQL."
     exit 1
 fi
-
-echo "Data inserted successfully!"

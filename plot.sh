@@ -344,6 +344,41 @@ EOF
     echo "Market Cap vs Price plot saved to $OUTPUT_PNG"
 }
 
+# Function: Price vs Volume/Market Cap (%)
+price_volume_mcap_24hr() {
+    TXT_FILE="price_volume_mcap_24hr.txt"
+    OUTPUT_PNG="price_volume_mcap_24hr.png"
+
+    # Query database
+    mysql -u "$DB_USER" -h 127.0.0.1 -P 3306 -D "$DB_NAME" -B -N -e "
+        SELECT price, (volume_24h / market_cap) * 100
+        FROM asset_metrics
+        WHERE asset_id=$ASSET_ID
+            AND timestamp >= NOW() - INTERVAL 24 HOUR
+        ORDER BY timestamp;
+    " > "$TXT_FILE"
+
+    # Check if file is not empty
+    if [[ ! -s "$TXT_FILE" ]]; then
+        echo "Error: '$TXT_FILE' is empty. Cannot plot."
+        exit 1
+    fi
+
+    # Gnuplot
+    gnuplot <<-EOF
+        set terminal png size 1000,600
+        set output "$OUTPUT_PNG"
+        set datafile separator "\t"
+        set xlabel "Price (USD)"
+        set ylabel "Volume / Market Cap (%)"
+        set title "Bitcoin Volume / Market Cap vs Price - Last 24 Hours"
+        set grid
+        plot "$TXT_FILE" using 1:2 with linespoints lt rgb "blue" lw 2 pt 7 title "Vol / MCap (%)"
+EOF
+
+    echo "Price vs Volume/Market Cap (%) plot saved to $OUTPUT_PNG"
+}
+
 # Main Menu
 case "$1" in
     price_24hr)

@@ -310,6 +310,40 @@ EOF
     echo "Volume / Market Cap (24hr) plot saved to $OUTPUT_PNG"
 }
 
+mcap_price() {
+    TXT_FILE="mcap_price.txt"
+    OUTPUT_PNG="mcap_price.png"
+
+    #Query Database
+    mysql -u "$DB_USER" -h 127.0.0.1 -P 3306 -D "$DB_NAME" -B -N -e "
+        SELECT price, market_cap
+        FROM asset_metrics
+        WHERE asset_id = $ASSET_ID
+            AND timestamp >= NOW() - INTERVAL 7 DAY
+        ORDER BY timestamp;
+    " > "$TXT_FILE"
+
+    #Check file not empty
+    if [[ ! -s "$TXT_FILE" ]]; then
+        echo "Error: '$TXT_FILE' is empty. Cannot plot."
+        exit 1
+    fi
+
+    #Gnuplot
+    gnuplot <<-EOF
+        set terminal png size 1000,600
+        set output "$OUTPUT_PNG"
+        set datafile separator "\t"
+        set xlabel "Price (USD)"
+        set ylabel "Market Cap (USD)"
+        set title "Bitcoin Market Cap vs Price - Last 7 Days"
+        set grid
+        plot "$TXT_FILE" using 1:2 with linespoints lt rgb "purple" lw 2 pt 7 title "MCap vs Price"
+EOF
+
+    echo "Market Cap vs Price plot saved to $OUTPUT_PNG"
+}
+
 # Main Menu
 case "$1" in
     price_24hr)

@@ -345,13 +345,13 @@ EOF
 }
 
 # Function: Price vs Volume/Market Cap (%)
-price_volume_mcap_24hr() {
+price_volume-mcap_24hr() {
     TXT_FILE="price_volume_mcap_24hr.txt"
     OUTPUT_PNG="price_volume_mcap_24hr.png"
 
     # Query database
     mysql -u "$DB_USER" -h 127.0.0.1 -P 3306 -D "$DB_NAME" -B -N -e "
-        SELECT price, (volume_24h / market_cap) * 100
+        SELECT (volume_24h / market_cap) * 100, price
         FROM asset_metrics
         WHERE asset_id=$ASSET_ID
             AND timestamp >= NOW() - INTERVAL 24 HOUR
@@ -369,15 +369,16 @@ price_volume_mcap_24hr() {
         set terminal png size 1000,600
         set output "$OUTPUT_PNG"
         set datafile separator "\t"
-        set xlabel "Price (USD)"
-        set ylabel "Volume / Market Cap (%)"
-        set title "Bitcoin Volume / Market Cap vs Price - Last 24 Hours"
+        set xlabel "Volume / Market Cap (%)"
+        set ylabel "Price (USD)"
+        set title "Bitcoin Price vs Volume / Market Cap (%) - Last 24 Hours"
         set grid
-        plot "$TXT_FILE" using 1:2 with linespoints lt rgb "blue" lw 2 pt 7 title "Vol / MCap (%)"
+        plot "$TXT_FILE" using 1:2 with linespoints lt rgb "blue" lw 2 pt 7 title "Price vs Vol/MCap"
 EOF
 
     echo "Price vs Volume/Market Cap (%) plot saved to $OUTPUT_PNG"
 }
+
 
 # Main Menu
 case "$1" in
@@ -413,7 +414,7 @@ case "$1" in
     ;;
     *)
         echo "Unknown plot type: $1"
-        echo "Available types: price_24hr, fdv_7days, percent-change_24hr, mcap-fdv, voume_24hr, circulating_supply, market_cap, vol_mcap, price_volume-mcap, mcap_price"
+        echo "Available types: price_24hr, fdv_7days, percent-change_24hr, mcap_fdv, volume_24hr, circulating_supply, market_cap, vol_mcap, price_volume-mcap, mcap_price"
         exit 1
         ;;
 esac
